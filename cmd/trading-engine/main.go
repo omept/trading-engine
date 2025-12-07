@@ -135,39 +135,81 @@ func main() {
 
 // minimalUI returns a tiny HTML+JS UI that calls start/stop/status endpoints
 func minimalUI() string {
-	return `<!doctype html>
+	return `
+<!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8" />
-<title>Trading Engine Control</title>
-<style>
-body{font-family:system-ui,Arial;margin:24px}
-button{padding:8px 12px;margin:6px}
-pre{background:#f6f8fa;padding:12px;border-radius:6px}
-</style>
+    <meta charset="utf-8">
+    <title>Trading Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: system-ui, Arial;
+            margin: 24px
+        }
+
+        button {
+            padding: 8px 12px;
+            margin: 6px
+        }
+
+        canvas {
+            max-width: 100%;
+            height: 300px;
+        }
+    </style>
 </head>
+
 <body>
-<h2>Trading Engine</h2>
-<button onclick="start()">Start</button>
-<button onclick="stop()">Stop</button>
-<button onclick="status()">Status</button>
-<button onclick="metrics()">Metrics</button>
-<pre id="out">Ready</pre>
-<script>
-async function start(){
-  await fetch('/api/start', {method:'POST'}).then(r=>r.text()).then(t=>document.getElementById('out').innerText=t)
-}
-async function stop(){
-  await fetch('/api/stop', {method:'POST'}).then(r=>r.text()).then(t=>document.getElementById('out').innerText=t)
-}
-async function status(){
-  await fetch('/api/status').then(r=>r.json()).then(j=>document.getElementById('out').innerText=JSON.stringify(j,null,2))
-}
-async function metrics(){
-  await fetch('/api/metrics').then(r=>r.json()).then(j=>document.getElementById('out').innerText=JSON.stringify(j,null,2))
-}
-</script>
+    <h2>Trading Engine Dashboard</h2>
+    <div>
+        <button onclick="start()">Start</button>
+        <button onclick="stop()">Stop</button>
+        <button onclick="refreshMetrics()">Refresh Metrics</button>
+    </div>
+    <div>
+        Orders: <span id="orders">0</span> | Trades: <span id="trades">0</span> | Runs: <span id="runs">0</span>
+    </div>
+    <canvas id="chart"></canvas>
+    <script>
+        let chart;
+        async function fetchCandles() {
+            const res = await fetch('/api/candles?symbol=BTCUSD&limit=100');
+            return await res.json();
+        }
+        async function fetchMetrics() {
+            const res = await fetch('/api/metrics');
+            return await res.json();
+        }
+        async function renderChart() {
+            const candles = await fetchCandles();
+            const labels = candles.map(c => c.time);
+            const data = {
+                labels: labels,
+                datasets: [
+                    { label: 'Close', data: candles.map(c => c.close), borderColor: 'blue', backgroundColor: 'rgba(0,0,255,0.2)' },
+                    { label: 'Open', data: candles.map(c => c.open), borderColor: 'green', backgroundColor: 'rgba(0,255,0,0.2)' }
+                ]
+            };
+            if (chart) { chart.data = data; chart.update(); }
+            else {
+                const ctx = document.getElementById('chart').getContext('2d');
+                chart = new Chart(ctx, { type: 'line', data: data });
+            }
+        }
+        async function refreshMetrics() {
+            const m = await fetchMetrics();
+            document.getElementById('orders').innerText = m.orders;
+            document.getElementById('trades').innerText = m.trades;
+            document.getElementById('runs').innerText = m.runs;
+        }
+        async function start() { await fetch('/api/start', { method: 'POST' }); }
+        async function stop() { await fetch('/api/stop', { method: 'POST' }); }
+        setInterval(() => { renderChart(); refreshMetrics(); }, 3000);
+        window.onload = () => { renderChart(); refreshMetrics(); };
+    </script>
 </body>
+
 </html>`
 }
 
