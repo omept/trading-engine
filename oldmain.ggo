@@ -1,0 +1,617 @@
+package main
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"log"
+	"math"
+	"sort"
+	"sync"
+	"time"
+)
+
+/*
+Custom Go Strategy Engine
+- Strategy interface
+- ExchangeAdapter interface (place orders, fetch balances, subscribe to candles/trades)
+- OrderManager (idempotency, retries)
+- RiskManager (position sizing)
+- Backtester
+- Example strategies: EMA Crossover & Mean Reversion
+- In-memory MockExchangeAdapter for safe testing
+*/
+
+// ----- Types & Models -----
+
+type Side string
+type OrderType string
+
+const (
+	SideBuy  Side = "BUY"
+	SideSell Side = "SELL"
+
+	OrderMarket OrderType = "MARKET"
+	OrderLimit  OrderType = "LIMIT"
+)
+
+type Candle struct {
+	Time   time.Time
+	Open   float64
+	High   float64
+	Low    float64
+	Close  float64
+	Volume float64
+}
+
+type Order struct {
+	ID          string
+	Symbol      string
+	Side        Side
+	Type        OrderType
+	Price       float64 // for limit orders
+	Quantity    float64
+	CreatedAt   time.Time
+	Filled      bool
+	FilledAt    *time.Time
+	FilledPrice float64
+}
+
+type Position struct {
+	Symbol   string
+	Quantity float64
+	AvgPrice float64
+	Side     Side // LONG/SHORT - here we use buy/sell semantics for simplicity
+}
+
+// ----- Interfaces -----
+
+// Strategy receives candles and can emit orders (through engine callback)
+type Strategy interface {
+	OnCandle(c Candle)
+	OnStart()
+	OnStop()
+	Name() string
+}
+
+// ExchangeAdapter abstracts exchange actions
+type ExchangeAdapter interface {
+	PlaceOrder(ctx context.Context, o Order) (Order, error)           // places an order (returns order with ID)
+	GetPosition(ctx context.Context, symbol string) (Position, error) // get current position
+	GetBalances(ctx context.Context) (map[string]float64, error)      // balances
+	SubscribeCandles(ctx context.Context, symbol string, interval time.Duration) (<-chan Candle, error)
+	CancelOrder(ctx context.Context, orderID string) error
+}
+
+// RiskManager decides size given e.g. account balance and risk percent
+type RiskManager interface {
+	Size(symbol string, price float64, accountBalance float64) float64
+}
+
+// OrderExecutor is how strategies submit orders to the system
+type OrderExecutor interface {
+	Submit(ctx context.Context, o Order) (Order, error)
+}
+
+// ----- Utilities -----
+
+func genID(prefix string) string {
+	b := make([]byte, 12)
+	_, _ = rand.Read(b)
+	return prefix + hex.EncodeToString(b)
+}
+
+// ----- In-memory Mock Exchange (good for paper/backtest) -----
+
+type MockExchange struct {
+	mtx       sync.RWMutex
+	positions map[string]Position
+	balances  map[string]float64
+	orders    map[string]Order
+	// candle feeds per symbol
+	feeds map[string]chan Candle
+}
+
+func NewMockExchange() *MockExchange {
+	return &MockExchange{
+		positions: make(map[string]Position),
+		balances:  map[string]float64{"USD": 100000.0, "BTC": 0.0},
+		orders:    make(map[string]Order),
+		feeds:     make(map[string]chan Candle),
+	}
+}
+
+func (m *MockExchange) PlaceOrder(ctx context.Context, o Order) (Order, error) {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	o.ID = genID("mock_")
+	o.CreatedAt = time.Now().UTC()
+
+	// simple immediate-fill market order simulation
+	if o.Type == OrderMarket {
+		// we need a price - approximate by last known candle if any
+		var lastPrice float64 = 0
+		if ch, ok := m.feeds[o.Symbol]; ok {
+			// peek last - not trivial with channel, so we store last price in position or fallback
+			// For mock simplicity, set to 1 if unknown
+			lastPrice = 1
+			_ = ch
+		} else {
+			lastPrice = 1
+		}
+		o.Filled = true
+		now := time.Now().UTC()
+		o.FilledAt = &now
+		o.FilledPrice = lastPrice
+		// update positions and balances simplistically
+		pos := m.positions[o.Symbol]
+		if o.Side == SideBuy {
+			// buy using USD
+			cost := o.Quantity * o.FilledPrice
+			if m.balances["USD"] < cost {
+				return o, errors.New("insufficient USD balance")
+			}
+			m.balances["USD"] -= cost
+			// update position avg price
+			totalQty := pos.Quantity + o.Quantity
+			if pos.Quantity == 0 {
+				pos.AvgPrice = o.FilledPrice
+			} else {
+				pos.AvgPrice = (pos.AvgPrice*pos.Quantity + o.FilledPrice*o.Quantity) / totalQty
+			}
+			pos.Quantity = totalQty
+			pos.Symbol = o.Symbol
+			pos.Side = SideBuy
+			m.positions[o.Symbol] = pos
+		} else {
+			// sell
+			if pos.Quantity < o.Quantity {
+				return o, errors.New("insufficient asset quantity")
+			}
+			proceed := o.Quantity * o.FilledPrice
+			m.balances["USD"] += proceed
+			pos.Quantity -= o.Quantity
+			if pos.Quantity == 0 {
+				pos.AvgPrice = 0
+			}
+			m.positions[o.Symbol] = pos
+		}
+	} else {
+		// store limit order (not filled)
+		o.Filled = false
+	}
+	m.orders[o.ID] = o
+	return o, nil
+}
+
+func (m *MockExchange) GetPosition(ctx context.Context, symbol string) (Position, error) {
+	m.mtx.RLock()
+	defer m.mtx.RUnlock()
+	if p, ok := m.positions[symbol]; ok {
+		return p, nil
+	}
+	return Position{Symbol: symbol}, nil
+}
+
+func (m *MockExchange) GetBalances(ctx context.Context) (map[string]float64, error) {
+	m.mtx.RLock()
+	defer m.mtx.RUnlock()
+	out := make(map[string]float64, len(m.balances))
+	for k, v := range m.balances {
+		out[k] = v
+	}
+	return out, nil
+}
+
+func (m *MockExchange) SubscribeCandles(ctx context.Context, symbol string, interval time.Duration) (<-chan Candle, error) {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	ch := make(chan Candle, 1024)
+	m.feeds[symbol] = ch
+	// No internal goroutine; backtester or main will push into channel.
+	return ch, nil
+}
+
+func (m *MockExchange) CancelOrder(ctx context.Context, orderID string) error {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	if o, ok := m.orders[orderID]; ok {
+		if o.Filled {
+			return errors.New("already filled")
+		}
+		delete(m.orders, orderID)
+		return nil
+	}
+	return errors.New("order not found")
+}
+
+// ----- Order Manager (retries, idempotency) -----
+
+type SimpleOrderManager struct {
+	exchange ExchangeAdapter
+	// map external idempotencyKey -> orderID
+	mtx     sync.Mutex
+	pending map[string]string
+}
+
+func NewSimpleOrderManager(exchange ExchangeAdapter) *SimpleOrderManager {
+	return &SimpleOrderManager{
+		exchange: exchange,
+		pending:  make(map[string]string),
+	}
+}
+
+func (om *SimpleOrderManager) Submit(ctx context.Context, o Order) (Order, error) {
+	// create idempotency key from symbol+side+qty+type+timestamp bucket
+	key := fmt.Sprintf("%s:%s:%f:%s", o.Symbol, o.Side, o.Quantity, o.Type)
+	om.mtx.Lock()
+	if id, ok := om.pending[key]; ok {
+		om.mtx.Unlock()
+		// return the stored order (best-effort)
+		_ = id
+		return Order{ID: id}, nil
+	}
+	om.mtx.Unlock()
+
+	// simple retry with exponential backoff (bounded)
+	var lastErr error
+	var res Order
+	wait := 200 * time.Millisecond
+	for i := 0; i < 5; i++ {
+		r, err := om.exchange.PlaceOrder(ctx, o)
+		if err == nil {
+			res = r
+			om.mtx.Lock()
+			om.pending[key] = r.ID
+			om.mtx.Unlock()
+			return res, nil
+		}
+		lastErr = err
+		time.Sleep(wait)
+		wait *= 2
+	}
+	return res, fmt.Errorf("failed to place order: %w", lastErr)
+}
+
+// ----- Simple Risk Manager -----
+
+type FixedPercentRisk struct {
+	Percent float64 // risk percent of account per trade (0.01 = 1%)
+}
+
+func (r *FixedPercentRisk) Size(symbol string, price float64, accountBalance float64) float64 {
+	if price <= 0 {
+		return 0
+	}
+	usdRisk := accountBalance * r.Percent
+	qty := usdRisk / price
+	// floor to 8 decimals like many exchanges
+	return math.Floor(qty*1e8) / 1e8
+}
+
+// ----- EMA helper -----
+
+func EMA(series []float64, period int) []float64 {
+	if period <= 0 {
+		return nil
+	}
+	out := make([]float64, len(series))
+	k := 2.0 / float64(period+1)
+	var prev float64
+	for i := range series {
+		if i == 0 {
+			prev = series[0]
+			out[0] = prev
+			continue
+		}
+		prev = (series[i]-prev)*k + prev
+		out[i] = prev
+	}
+	return out
+}
+
+// ----- Strategy Examples -----
+
+// EMA Crossover Strategy
+type EMACrossover struct {
+	shortPeriod int
+	longPeriod  int
+
+	priceHistory []float64
+	exec         OrderExecutor
+	symbol       string
+	accountUSD   float64
+	risk         RiskManager
+	name         string
+	lock         sync.Mutex
+}
+
+func NewEMACrossover(symbol string, shortP, longP int, exec OrderExecutor, risk RiskManager) *EMACrossover {
+	return &EMACrossover{
+		shortPeriod:  shortP,
+		longPeriod:   longP,
+		priceHistory: []float64{},
+		exec:         exec,
+		symbol:       symbol,
+		risk:         risk,
+		name:         fmt.Sprintf("EMA-%d-%d", shortP, longP),
+	}
+}
+
+func (s *EMACrossover) Name() string { return s.name }
+func (s *EMACrossover) OnStart()     {}
+func (s *EMACrossover) OnStop()      {}
+
+func (s *EMACrossover) OnCandle(c Candle) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	price := c.Close
+	s.priceHistory = append(s.priceHistory, price)
+	if len(s.priceHistory) < s.longPeriod+2 {
+		return
+	}
+	shortEMA := EMA(s.priceHistory, s.shortPeriod)
+	longEMA := EMA(s.priceHistory, s.longPeriod)
+	if len(shortEMA) < 2 || len(longEMA) < 2 {
+		return
+	}
+	n := len(shortEMA) - 1
+	prev := n - 1
+	// golden cross
+	if shortEMA[prev] <= longEMA[prev] && shortEMA[n] > longEMA[n] {
+		// buy signal
+		qty := s.risk.Size(s.symbol, price, s.accountUSD)
+		if qty <= 0 {
+			return
+		}
+		o := Order{
+			Symbol:   s.symbol,
+			Side:     SideBuy,
+			Type:     OrderMarket,
+			Quantity: qty,
+		}
+		ctx := context.Background()
+		if _, err := s.exec.Submit(ctx, o); err != nil {
+			log.Println("[EMA] order error:", err)
+		} else {
+			log.Println("[EMA] BUY executed", qty, "at", price)
+		}
+	}
+	// death cross -> sell whatever position we have
+	if shortEMA[prev] >= longEMA[prev] && shortEMA[n] < longEMA[n] {
+		// create sell of full position - this requires fetching position externally, but for simplicity we
+		// assume position quantity is small and strategy sells fixed percent
+		qty := s.risk.Size(s.symbol, price, s.accountUSD) // simplification for example
+		if qty <= 0 {
+			return
+		}
+		o := Order{
+			Symbol:   s.symbol,
+			Side:     SideSell,
+			Type:     OrderMarket,
+			Quantity: qty,
+		}
+		ctx := context.Background()
+		if _, err := s.exec.Submit(ctx, o); err != nil {
+			log.Println("[EMA] sell error:", err)
+		} else {
+			log.Println("[EMA] SELL executed", qty, "at", price)
+		}
+	}
+}
+
+// Mean Reversion Strategy (simple)
+type MeanReversion struct {
+	window int
+	k      float64 // thresholds in std devs
+	prices []float64
+
+	exec   OrderExecutor
+	symbol string
+	risk   RiskManager
+	name   string
+	lock   sync.Mutex
+}
+
+func NewMeanReversion(symbol string, window int, k float64, exec OrderExecutor, risk RiskManager) *MeanReversion {
+	return &MeanReversion{
+		window: window,
+		k:      k,
+		prices: []float64{},
+		exec:   exec,
+		symbol: symbol,
+		risk:   risk,
+		name:   fmt.Sprintf("MeanRev-%d-%.2f", window, k),
+	}
+}
+func (m *MeanReversion) Name() string { return m.name }
+func (m *MeanReversion) OnStart()     {}
+func (m *MeanReversion) OnStop()      {}
+
+func meanStd(xs []float64) (float64, float64) {
+	n := float64(len(xs))
+	if n == 0 {
+		return 0, 0
+	}
+	var sum float64
+	for _, v := range xs {
+		sum += v
+	}
+	mean := sum / n
+	var sq float64
+	for _, v := range xs {
+		diff := v - mean
+		sq += diff * diff
+	}
+	variance := sq / n
+	return mean, math.Sqrt(variance)
+}
+
+func (m *MeanReversion) OnCandle(c Candle) {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	m.prices = append(m.prices, c.Close)
+	if len(m.prices) < m.window {
+		return
+	}
+	windowSlice := m.prices[len(m.prices)-m.window:]
+	mean, sd := meanStd(windowSlice)
+	last := c.Close
+	if last < mean-m.k*sd {
+		// buy signal
+		qty := m.risk.Size(m.symbol, last, 10000) // example account
+		if qty <= 0 {
+			return
+		}
+		o := Order{Symbol: m.symbol, Side: SideBuy, Type: OrderMarket, Quantity: qty}
+		ctx := context.Background()
+		_, err := m.exec.Submit(ctx, o)
+		if err != nil {
+			log.Println("[MeanRev] buy err:", err)
+		} else {
+			log.Println("[MeanRev] buy executed", qty, "at", last)
+		}
+	} else if last > mean+m.k*sd {
+		// sell signal
+		qty := m.risk.Size(m.symbol, last, 10000)
+		if qty <= 0 {
+			return
+		}
+		o := Order{Symbol: m.symbol, Side: SideSell, Type: OrderMarket, Quantity: qty}
+		ctx := context.Background()
+		_, err := m.exec.Submit(ctx, o)
+		if err != nil {
+			log.Println("[MeanRev] sell err:", err)
+		} else {
+			log.Println("[MeanRev] sell executed", qty, "at", last)
+		}
+	}
+}
+
+// ----- Backtester -----
+
+type Backtester struct {
+	candles []Candle
+	strat   Strategy
+	exec    OrderExecutor
+	start   time.Time
+	end     time.Time
+}
+
+func NewBacktester(candles []Candle, strat Strategy, exec OrderExecutor) *Backtester {
+	return &Backtester{
+		candles: candles,
+		strat:   strat,
+		exec:    exec,
+	}
+}
+
+func (b *Backtester) Run() {
+	// sort candles by time
+	sort.Slice(b.candles, func(i, j int) bool {
+		return b.candles[i].Time.Before(b.candles[j].Time)
+	})
+	b.strat.OnStart()
+	for _, c := range b.candles {
+		b.strat.OnCandle(c)
+	}
+	b.strat.OnStop()
+}
+
+// ----- Example usage - assemble components and run a demo -----
+
+func main() {
+	log.Println("Starting custom Go strategy engine demo...")
+
+	// create mock exchange & order manager
+	mock := NewMockExchange()
+	om := NewSimpleOrderManager(mock)
+
+	// risk manager 0.5% per trade
+	risk := &FixedPercentRisk{Percent: 0.005}
+
+	// Strategy: EMA crossover 9/21
+	ema := NewEMACrossover("BTCUSD", 9, 21, om, risk)
+	ema.accountUSD = 10000
+
+	// Subscribe to in-memory candle feed
+	ctx := context.Background()
+	ch, _ := mock.SubscribeCandles(ctx, "BTCUSD", time.Minute)
+
+	// feed sample synthetic candles in a goroutine (simulate a live feed)
+	go func() {
+		// create a simple synthetic uptrend then downtrend
+		now := time.Now().Add(-200 * time.Minute)
+		price := 40000.0
+		for i := 0; i < 300; i++ {
+			// tiny random-ish walk
+			if i < 150 {
+				price *= 1 + (0.0005 + (float64(i%5)-2)*0.0002)
+			} else {
+				price *= 1 - (0.0007 + (float64(i%7)-3)*0.00025)
+			}
+			c := Candle{
+				Time:   now.Add(time.Duration(i) * time.Minute),
+				Open:   price * 0.999,
+				High:   price * 1.001,
+				Low:    price * 0.998,
+				Close:  price,
+				Volume: 10 + float64(i%10),
+			}
+			// push to channel
+			select {
+			case ch <- c:
+			default:
+			}
+			time.Sleep(5 * time.Millisecond) // fast forward; in real app you'd block on real tick time
+		}
+		close(ch)
+	}()
+
+	// run engine loop: read candles and pass to strategies
+	done := make(chan struct{})
+	go func() {
+		for c := range ch {
+			ema.OnCandle(c)
+		}
+		done <- struct{}{}
+	}()
+
+	<-done
+	log.Println("Feed finished. Example run complete.")
+
+	// Backtest example using same strategy but with prebuilt candles
+	// Build candles for backtest: we reuse the synthetic generator
+	bcandles := make([]Candle, 0, 200)
+	now := time.Now().Add(-500 * time.Minute)
+	p := 20000.0
+	for i := 0; i < 200; i++ {
+		if i%2 == 0 {
+			p *= 1.001 + float64(i%3)/10000.0
+		} else {
+			p *= 1 - (float64(i%4) / 20000.0)
+		}
+		c := Candle{
+			Time:   now.Add(time.Duration(i) * time.Minute),
+			Open:   p * 0.999,
+			High:   p * 1.001,
+			Low:    p * 0.998,
+			Close:  p,
+			Volume: 5 + float64(i%8),
+		}
+		bcandles = append(bcandles, c)
+	}
+
+	// For backtest we want a different order manager (fresh mock)
+	mock2 := NewMockExchange()
+	om2 := NewSimpleOrderManager(mock2)
+	emaBT := NewEMACrossover("BTCUSD", 9, 21, om2, risk)
+	emaBT.accountUSD = 10000
+
+	bt := NewBacktester(bcandles, emaBT, om2)
+	bt.Run()
+
+	log.Println("Backtest complete.")
+}
