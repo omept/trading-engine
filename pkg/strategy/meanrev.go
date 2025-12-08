@@ -10,17 +10,18 @@ import (
 )
 
 type MeanReversion struct {
-	window int
-	k      float64
-	prices []float64
-	exec   engine.OrderExecutor
-	risk   engine.RiskManager
-	symbol string
-	lock   sync.Mutex
-	name   string
+	window     int
+	k          float64
+	prices     []float64
+	exec       engine.OrderExecutor
+	risk       engine.RiskManager
+	accountUSD float64
+	symbol     string
+	lock       sync.Mutex
+	name       string
 }
 
-func NewMeanReversion(symbol string, window int, k float64, exec engine.OrderExecutor, risk engine.RiskManager) *MeanReversion {
+func NewMeanReversion(symbol string, window int, k float64, exec engine.OrderExecutor, risk engine.RiskManager) engine.Strategy {
 	return &MeanReversion{
 		window: window,
 		k:      k,
@@ -32,9 +33,10 @@ func NewMeanReversion(symbol string, window int, k float64, exec engine.OrderExe
 	}
 }
 
-func (m *MeanReversion) Name() string { return m.name }
-func (m *MeanReversion) OnStart()     { log.Println("Started Mean Reversion Strategy") }
-func (m *MeanReversion) OnStop()      { log.Println("Stopped Mean Reversion Strategy") }
+func (m *MeanReversion) Name() string            { return m.name }
+func (m *MeanReversion) SetAccountUSD(v float64) { m.accountUSD = v }
+func (m *MeanReversion) OnStart()                { log.Println("Started Mean Reversion Strategy") }
+func (m *MeanReversion) OnStop()                 { log.Println("Stopped Mean Reversion Strategy") }
 
 func meanStd(xs []float64) (float64, float64) {
 	n := float64(len(xs))
@@ -66,7 +68,7 @@ func (m *MeanReversion) OnCandle(c engine.Candle) {
 	mean, sd := meanStd(window)
 	last := c.Close
 	if last < mean-m.k*sd {
-		qty := m.risk.Size(m.symbol, last, 10000)
+		qty := m.risk.Size(m.symbol, last, m.accountUSD)
 		if qty <= 0 {
 			return
 		}
@@ -77,7 +79,7 @@ func (m *MeanReversion) OnCandle(c engine.Candle) {
 			log.Println("MeanRev buy executed", qty)
 		}
 	} else if last > mean+m.k*sd {
-		qty := m.risk.Size(m.symbol, last, 10000)
+		qty := m.risk.Size(m.symbol, last, m.accountUSD)
 		if qty <= 0 {
 			return
 		}

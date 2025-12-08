@@ -26,14 +26,15 @@ type Candle struct {
 }
 
 type Order struct {
-	ID       string
-	Symbol   string
-	Side     Side
-	Type     OrderType
-	Price    float64
-	Quantity float64
-	Created  int64
-	Filled   bool
+	ID          string
+	Symbol      string
+	Side        Side
+	Type        OrderType
+	Price       float64
+	FilledPrice float64
+	Quantity    float64
+	Created     int64
+	Filled      bool
 }
 
 type Position struct {
@@ -44,6 +45,7 @@ type Position struct {
 
 type Strategy interface {
 	OnCandle(c Candle)
+	SetAccountUSD(v float64)
 	OnStart()
 	OnStop()
 	Name() string

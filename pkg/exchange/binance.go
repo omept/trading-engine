@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 	"trading-engine/pkg/engine"
+	"trading-engine/pkg/store"
 )
 
 type BinanceAdapter struct {
@@ -23,9 +24,10 @@ type BinanceAdapter struct {
 	client  *http.Client
 	baseURL string
 	mt      sync.Mutex
+	db      *store.SQLiteStore
 }
 
-func NewBinanceAdapter(apiKey, apiSecret string) (engine.ExchangeAdapter, error) {
+func NewBinanceAdapter(apiKey, apiSecret string, db *store.SQLiteStore) (engine.ExchangeAdapter, error) {
 	return &BinanceAdapter{
 		key:     apiKey,
 		secret:  apiSecret,

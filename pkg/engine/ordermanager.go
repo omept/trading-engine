@@ -5,16 +5,18 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"trading-engine/pkg/store"
 )
 
 type OrderManager struct {
 	exchange ExchangeAdapter
 	mt       sync.Mutex
 	pending  map[string]string
+	db       *store.SQLiteStore
 }
 
-func NewOrderManager(ex ExchangeAdapter) *OrderManager {
-	return &OrderManager{exchange: ex, pending: make(map[string]string)}
+func NewOrderManager(ex ExchangeAdapter, db *store.SQLiteStore) *OrderManager {
+	return &OrderManager{exchange: ex, pending: make(map[string]string), db: db}
 }
 
 func (om *OrderManager) Submit(ctx context.Context, o Order) (Order, error) {
@@ -34,6 +36,34 @@ func (om *OrderManager) Submit(ctx context.Context, o Order) (Order, error) {
 			om.mt.Lock()
 			om.pending[key] = r.ID
 			om.mt.Unlock()
+			if om.db != nil {
+				//persist order
+				err = om.db.SaveOrder(
+					r.ID,
+					r.Symbol,
+					string(r.Side),
+					string(r.Type),
+					r.Price,
+					r.FilledPrice,
+					r.Quantity,
+				)
+				if err != nil {
+					return r, err
+				}
+				// persist trade
+				tradeID := r.ID + "_trade"
+				err = om.db.SaveTrade(
+					tradeID,
+					r.ID,
+					r.Symbol,
+					string(r.Side),
+					r.FilledPrice,
+					r.Quantity,
+				)
+				if err != nil {
+					return r, err
+				}
+			}
 			return r, nil
 		}
 		lastErr = err

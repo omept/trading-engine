@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 	"trading-engine/pkg/engine"
+	"trading-engine/pkg/store"
 )
 
 type AlpacaAdapter struct {
@@ -19,14 +20,16 @@ type AlpacaAdapter struct {
 	baseURL string
 	client  *http.Client
 	mt      sync.Mutex
+	db      *store.SQLiteStore
 }
 
-func NewAlpacaAdapter(key, secret, base string) (engine.ExchangeAdapter, error) {
+func NewAlpacaAdapter(key, secret, base string, db *store.SQLiteStore) (engine.ExchangeAdapter, error) {
 	return &AlpacaAdapter{
 		key:     key,
 		secret:  secret,
 		baseURL: base,
 		client:  &http.Client{Timeout: 15 * time.Second},
+		db:      db,
 	}, nil
 }
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"trading-engine/pkg/engine"
+	"trading-engine/pkg/store"
 )
 
 type MockExchange struct {
@@ -15,14 +16,16 @@ type MockExchange struct {
 	positions map[string]engine.Position
 	feeds     map[string]chan engine.Candle
 	orders    map[string]engine.Order
+	db        *store.SQLiteStore
 }
 
-func NewMockExchange(bal float64) engine.ExchangeAdapter {
+func NewMockExchange(bal float64, db *store.SQLiteStore) engine.ExchangeAdapter {
 	return &MockExchange{
 		balances:  map[string]float64{"USD": bal},
 		positions: make(map[string]engine.Position),
 		feeds:     make(map[string]chan engine.Candle),
 		orders:    make(map[string]engine.Order),
+		db:        db,
 	}
 }
 

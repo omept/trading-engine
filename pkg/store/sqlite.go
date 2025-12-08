@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -131,4 +132,93 @@ func (s *SQLiteStore) LoadCandles(symbol string, limit int) ([]map[string]interf
 		})
 	}
 	return candles, nil
+}
+
+// Save Order
+func (s *SQLiteStore) SaveOrder(id string,
+	symbol string,
+	side string,
+	orderType string,
+	price float64,
+	filledPrice float64,
+	quantity float64,
+) error {
+	_, err := s.db.Exec(`INSERT OR REPLACE INTO orders(id,symbol,side,type,price,quantity,filled,filled_price,created_at)
+VALUES(?,?,?,?,?,?,?,?,?)`,
+		id, symbol, side, orderType, price, quantity, true, filledPrice, time.Now())
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *SQLiteStore) SaveTrade(
+	id, orderID, symbol, side string,
+	price, quantity float64,
+) error {
+	_, err := s.db.Exec(`
+        INSERT OR REPLACE INTO trades(id,order_id,symbol,side,price,quantity,created_at)
+        VALUES(?,?,?,?,?,?,datetime('now'))
+    `, id, orderID, symbol, side, price, quantity)
+	return err
+}
+
+func (s *SQLiteStore) SaveRunStart(id, strategy string) error {
+	_, err := s.db.Exec(`
+        INSERT OR REPLACE INTO runs(id,strategy,started_at)
+        VALUES(?,?,datetime('now'))
+    `, id, strategy)
+	return err
+}
+
+func (s *SQLiteStore) SaveRunStop(id string) error {
+	_, err := s.db.Exec(`
+        UPDATE runs SET stopped_at=datetime('now')
+        WHERE id=?
+    `, id)
+	return err
+}
+
+func (s *SQLiteStore) PnL(symbol string) (float64, error) {
+	rows, err := s.db.Query(`
+        SELECT side, price, quantity FROM trades WHERE symbol=?
+    `, symbol)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	var pnl float64
+	var pos float64
+	var avg float64
+
+	for rows.Next() {
+		var side string
+		var price, qty float64
+		rows.Scan(&side, &price, &qty)
+
+		if side == "BUY" {
+			avg = (avg*pos + price*qty) / (pos + qty)
+			pos += qty
+		} else {
+			// SELL
+			pnl += (price - avg) * qty
+			pos -= qty
+		}
+	}
+
+	return pnl, nil
+}
+
+func (s *SQLiteStore) SaveRun(id string, start, end time.Time, final float64) error {
+	const q = `
+        INSERT INTO runs (id, start_time, end_time, final_pnl)
+        VALUES (?, ?, ?, ?)
+    `
+
+	_, err := s.db.Exec(q, id, start.UTC(), end.UTC(), final)
+	if err != nil {
+		return fmt.Errorf("sqlite: SaveRun failed: %w", err)
+	}
+	return nil
 }

@@ -70,10 +70,10 @@ func main() {
 	}
 
 	// Create exchange adapter based on env
-	exch := initExhangeAdapter(exchangeName)
+	exch := initExhangeAdapter(exchangeName, db)
 
 	// Order manager
-	om := engine.NewOrderManager(exch)
+	om := engine.NewOrderManager(exch, db)
 
 	// Risk manager
 	risk := engine.NewFixedPercentRisk(fdpr)
@@ -82,6 +82,7 @@ func main() {
 	ema := strategy.NewEMACrossover(emacSymbol, 9, 21, om, risk)
 	ema.SetAccountUSD(usdBal)
 	mr := strategy.NewMeanReversion(mrSymbol, 20, 2.0, om, risk)
+	mr.SetAccountUSD(usdBal)
 
 	// Engine
 	eng := engine.NewEngine()
@@ -213,7 +214,7 @@ func minimalUI() string {
 </html>`
 }
 
-func initExhangeAdapter(exchangeName string) engine.ExchangeAdapter {
+func initExhangeAdapter(exchangeName string, db *store.SQLiteStore) engine.ExchangeAdapter {
 	var exch engine.ExchangeAdapter
 	var err error
 	switch exchangeName {
@@ -225,7 +226,7 @@ func initExhangeAdapter(exchangeName string) engine.ExchangeAdapter {
 			log.Fatal("BINANCE_API_KEY and BINANCE_API_SECRET must be set for BINANCE exchange")
 		}
 		// exchange.NewBinanceAdapter should be implemented in your exchange package.
-		exch, err = exchange.NewBinanceAdapter(binKey, binSecret)
+		exch, err = exchange.NewBinanceAdapter(binKey, binSecret, db)
 		if err != nil {
 			log.Fatal("failed to init binance adapter:", err)
 		}
@@ -241,7 +242,7 @@ func initExhangeAdapter(exchangeName string) engine.ExchangeAdapter {
 		if alpKey == "" || alpSecret == "" {
 			log.Fatal("ALPACA_API_KEY and ALPACA_API_SECRET must be set for ALPACA exchange")
 		}
-		exch, err = exchange.NewAlpacaAdapter(alpKey, alpSecret, alpBase)
+		exch, err = exchange.NewAlpacaAdapter(alpKey, alpSecret, alpBase, db)
 		if err != nil {
 			log.Fatal("failed to init alpaca adapter:", err)
 		}
@@ -254,7 +255,7 @@ func initExhangeAdapter(exchangeName string) engine.ExchangeAdapter {
 		if err != nil || mockExchangeUSDBal <= 0 {
 			mockExchangeUSDBal = 100000 // defaults to 100000
 		}
-		exch = exchange.NewMockExchange(mockExchangeUSDBal)
+		exch = exchange.NewMockExchange(mockExchangeUSDBal, db)
 	}
 
 	return exch

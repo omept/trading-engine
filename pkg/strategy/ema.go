@@ -20,7 +20,7 @@ type EMACrossover struct {
 	name       string
 }
 
-func NewEMACrossover(symbol string, shortP, longP int, exec engine.OrderExecutor, risk engine.RiskManager) *EMACrossover {
+func NewEMACrossover(symbol string, shortP, longP int, exec engine.OrderExecutor, risk engine.RiskManager) engine.Strategy {
 	return &EMACrossover{
 		shortP: shortP,
 		longP:  longP,
@@ -73,7 +73,7 @@ func (e *EMACrossover) OnCandle(c engine.Candle) {
 		if qty <= 0 {
 			return
 		}
-		o := engine.Order{Symbol: e.symbol, Side: engine.SideBuy, Type: engine.OrderMarket, Quantity: qty}
+		o := engine.Order{Price: price, Symbol: e.symbol, Side: engine.SideBuy, Type: engine.OrderMarket, Quantity: qty}
 		if _, err := e.exec.Submit(context.TODO(), o); err != nil {
 			log.Println("EMA buy error:", err)
 		} else {
