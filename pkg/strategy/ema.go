@@ -8,6 +8,8 @@ import (
 	"trading-engine/pkg/engine"
 )
 
+const ST_NAME_EMA = "EMA strategy"
+
 type EMACrossover struct {
 	shortP     int
 	longP      int
@@ -28,12 +30,13 @@ func NewEMACrossover(symbol string, shortP, longP int, exec engine.OrderExecutor
 		exec:   exec,
 		risk:   risk,
 		symbol: symbol,
-		name:   "EMA strategy",
+		name:   ST_NAME_EMA,
 	}
 }
 
 func (e *EMACrossover) Name() string            { return e.name }
 func (e *EMACrossover) SetAccountUSD(v float64) { e.accountUSD = v }
+func (e *EMACrossover) AccountBalUSD() float64  { return e.accountUSD }
 func (e *EMACrossover) OnStart()                { log.Println("Started EMAC Crossover Strategy") }
 func (e *EMACrossover) OnStop()                 { log.Println("Stopped EMAC Crossover Strategy") }
 

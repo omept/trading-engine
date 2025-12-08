@@ -9,6 +9,8 @@ import (
 	"trading-engine/pkg/engine"
 )
 
+const ST_NAME_MEAN = "MeanReversion"
+
 type MeanReversion struct {
 	window     int
 	k          float64
@@ -29,12 +31,13 @@ func NewMeanReversion(symbol string, window int, k float64, exec engine.OrderExe
 		exec:   exec,
 		risk:   risk,
 		symbol: symbol,
-		name:   "MeanReversion",
+		name:   ST_NAME_MEAN,
 	}
 }
 
 func (m *MeanReversion) Name() string            { return m.name }
 func (m *MeanReversion) SetAccountUSD(v float64) { m.accountUSD = v }
+func (m *MeanReversion) AccountBalUSD() float64  { return m.accountUSD }
 func (m *MeanReversion) OnStart()                { log.Println("Started Mean Reversion Strategy") }
 func (m *MeanReversion) OnStop()                 { log.Println("Stopped Mean Reversion Strategy") }
 

@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"trading-engine/pkg/backtest"
 	"trading-engine/pkg/engine"
 	"trading-engine/pkg/exchange"
 	"trading-engine/pkg/store"
@@ -108,6 +109,34 @@ func main() {
 			log.Fatal(err)
 		}
 	}()
+
+	// ------------------------------------------------------
+	// BACKTEST MODE
+	// ------------------------------------------------------
+	backtestMode := os.Getenv("BACKTEST") == "1"
+	selectedStrategy := os.Getenv("STRATEGY") // ema | mean | all
+	if selectedStrategy == "" {
+		selectedStrategy = "all"
+	}
+
+	if backtestMode {
+		log.Println("BACKTEST MODE ENABLED")
+
+		sym := os.Getenv("BACKTEST_SYMBOL")
+		if sym == "" {
+			sym = "BTCUSD"
+		}
+
+		startS := os.Getenv("BACKTEST_START")
+		endS := os.Getenv("BACKTEST_END")
+
+		if startS == "" || endS == "" {
+			log.Fatal("BACKTEST_START and BACKTEST_END must be set when BACKTEST=1")
+		}
+
+		runBacktest(selectedStrategy, sym, eng, db)
+		return
+	}
 
 	// Start engine automatically
 	ctx, cancel := context.WithCancel(context.Background())
@@ -329,4 +358,59 @@ func setUpAPIs(eng *engine.Engine, db *store.SQLiteStore) *http.ServeMux {
 	})
 
 	return mux
+}
+
+func runBacktest(which, symbol string, eng *engine.Engine, db *store.SQLiteStore) []byte {
+	log.Println("Running backtest:", which, symbol)
+
+	// Load candles directly from SQLite
+	data, err := db.LoadCandles(symbol, 300)
+	if err != nil {
+		log.Fatal("LoadCandlesBetween:", err)
+	}
+	if len(data) == 0 {
+		log.Fatal("no candles found for backtest")
+	}
+
+	// Select strategy based on env
+	var strats []engine.Strategy
+
+	for _, s := range eng.Strategies() {
+		name := s.Name()
+
+		if which == "ema" && name == strategy.ST_NAME_EMA {
+			strats = append(strats, s)
+		}
+		if which == "mean" && name == strategy.ST_NAME_MEAN {
+			strats = append(strats, s)
+		}
+		if which == "all" {
+			strats = append(strats, s)
+		}
+	}
+
+	if len(strats) == 0 {
+		log.Fatal("no strategy selected for backtest")
+	}
+
+	bytes, err := json.Marshal(data)
+	if err != nil {
+		log.Fatal(err)
+	}
+	var candles []engine.Candle
+	if err := json.Unmarshal(bytes, &candles); err != nil {
+		log.Fatal(err)
+	}
+
+	bt := backtest.NewBacktester(candles, eng, db)
+	stats, _ := bt.Run("BTCUSDT")
+
+	// convert to JSON
+	jsonBytes, err := json.MarshalIndent(stats, "", "  ")
+	if err != nil {
+		log.Fatal("Failed to marshal stats:", err)
+	}
+
+	log.Println("Backtest complete.")
+	return jsonBytes
 }

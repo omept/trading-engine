@@ -17,12 +17,12 @@ const (
 )
 
 type Candle struct {
-	Time   time.Time
-	Open   float64
-	High   float64
-	Low    float64
-	Close  float64
-	Volume float64
+	Time   time.Time `json:"time"`
+	Open   float64   `json:"open"`
+	High   float64   `json:"high"`
+	Low    float64   `json:"low"`
+	Close  float64   `json:"close"`
+	Volume float64   `json:"volume"`
 }
 
 type Order struct {
@@ -46,6 +46,7 @@ type Position struct {
 type Strategy interface {
 	OnCandle(c Candle)
 	SetAccountUSD(v float64)
+	AccountBalUSD() float64
 	OnStart()
 	OnStop()
 	Name() string

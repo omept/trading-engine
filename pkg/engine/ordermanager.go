@@ -15,7 +15,7 @@ type OrderManager struct {
 	db       *store.SQLiteStore
 }
 
-func NewOrderManager(ex ExchangeAdapter, db *store.SQLiteStore) *OrderManager {
+func NewOrderManager(ex ExchangeAdapter, db *store.SQLiteStore) OrderExecutor {
 	return &OrderManager{exchange: ex, pending: make(map[string]string), db: db}
 }
 

@@ -43,6 +43,22 @@ func (e *Engine) SetStore(s *store.SQLiteStore) {
 	e.store = s
 }
 
+func (e *Engine) ExchangeAdapter() ExchangeAdapter {
+	return e.exchange
+}
+
+func (e *Engine) OrderManager() OrderExecutor {
+	return e.om
+}
+
+func (e *Engine) Store() *store.SQLiteStore {
+	return e.store
+}
+
+func (e *Engine) Strategies() []Strategy {
+	return e.strategies
+}
+
 func (e *Engine) Start(ctx context.Context) {
 	e.ctx, e.cancel = context.WithCancel(ctx)
 	// subscribe to candles for each strategy symbol via exchange (mock supports it)

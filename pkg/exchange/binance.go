@@ -33,6 +33,7 @@ func NewBinanceAdapter(apiKey, apiSecret string, db *store.SQLiteStore) (engine.
 		secret:  apiSecret,
 		client:  &http.Client{Timeout: 15 * time.Second},
 		baseURL: "https://api.binance.com",
+		db:      db,
 	}, nil
 }
 
