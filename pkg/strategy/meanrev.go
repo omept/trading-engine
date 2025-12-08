@@ -36,6 +36,7 @@ func NewMeanReversion(symbol string, window int, k float64, exec engine.OrderExe
 }
 
 func (m *MeanReversion) Name() string            { return m.name }
+func (m *MeanReversion) Symbol() string          { return m.symbol }
 func (m *MeanReversion) SetAccountUSD(v float64) { m.accountUSD = v }
 func (m *MeanReversion) AccountBalUSD() float64  { return m.accountUSD }
 func (m *MeanReversion) OnStart()                { log.Println("Started Mean Reversion Strategy") }

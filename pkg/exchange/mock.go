@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -56,6 +57,10 @@ func (m *MockExchange) PushCandleInBacktest(symbol string, c engine.Candle) {
 	if ok {
 		ch <- c
 	}
+}
+
+func (a *MockExchange) AdapterName() string {
+	return "Mock"
 }
 
 func (m *MockExchange) PlaceOrder(ctx context.Context, o engine.Order) (engine.Order, error) {
@@ -137,6 +142,7 @@ func (m *MockExchange) SubscribeCandles(ctx context.Context, symbol string, inte
 	ch := make(chan engine.Candle, 1024)
 	m.feeds[symbol] = ch
 	// start a small generator for demo
+	log.Printf("Subscribing to Candles from %s", m.AdapterName())
 	go func() {
 		now := time.Now().Add(-time.Duration(200) * time.Minute)
 		price := 30000.0

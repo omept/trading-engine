@@ -127,15 +127,6 @@ func main() {
 			sym = "BTCUSD"
 		}
 
-		startS := os.Getenv("BACKTEST_START")
-		endS := os.Getenv("BACKTEST_END")
-
-		if startS == "" || endS == "" {
-			log.Fatal("BACKTEST_START and BACKTEST_END must be set when BACKTEST=1")
-		}
-
-		runBacktest(selectedStrategy, sym, eng, db)
-		return
 	}
 
 	// Start engine automatically
@@ -168,6 +159,7 @@ func minimalUI() string {
 	return `
 <!DOCTYPE html>
 <html>
+
 <head>
     <meta charset="utf-8">
     <title>Trading Dashboard</title>
@@ -213,18 +205,21 @@ func minimalUI() string {
         }
         async function renderChart() {
             const candles = await fetchCandles();
-            const labels = candles.map(c => c.time);
-            const data = {
-                labels: labels,
-                datasets: [
-                    { label: 'Close', data: candles.map(c => c.close), borderColor: 'blue', backgroundColor: 'rgba(0,0,255,0.2)' },
-                    { label: 'Open', data: candles.map(c => c.open), borderColor: 'green', backgroundColor: 'rgba(0,255,0,0.2)' }
-                ]
-            };
-            if (chart) { chart.data = data; chart.update(); }
-            else {
-                const ctx = document.getElementById('chart').getContext('2d');
-                chart = new Chart(ctx, { type: 'line', data: data });
+            if (candles){
+                const labels = candles.map(c => c.time);
+                const data = {
+                    labels: labels,
+                    datasets: [
+                        { label: 'Close', data: candles.map(c => c.close), borderColor: 'blue', backgroundColor: 'rgba(0,0,255,0.2)' },
+                        { label: 'Open', data: candles.map(c => c.open), borderColor: 'green', backgroundColor: 'rgba(0,255,0,0.2)' }
+                    ]
+                };
+            
+				if (chart) { chart.data = data; chart.update(); }
+				else {
+					const ctx = document.getElementById('chart').getContext('2d');
+					chart = new Chart(ctx, { type: 'line', data: data });
+				}
             }
         }
         async function refreshMetrics() {
@@ -355,6 +350,38 @@ func setUpAPIs(eng *engine.Engine, db *store.SQLiteStore) *http.ServeMux {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write([]byte(minimalUI()))
+	})
+
+	mux.HandleFunc("/api/backtest", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			w.Write([]byte("method not allowed, use POST"))
+			return
+		}
+
+		// Read query parameters or JSON body (here using query params for simplicity)
+		which := r.URL.Query().Get("strategy") // ema | mean | all
+		if which == "" {
+			which = "all"
+		}
+		symbol := r.URL.Query().Get("symbol")
+		if symbol == "" {
+			symbol = "BTCUSD"
+		}
+
+		// Optional: start/end for future range selection
+		start := r.URL.Query().Get("start")
+		end := r.URL.Query().Get("end")
+		if start == "" || end == "" {
+			// default: ignore or use entire DB range
+		}
+
+		log.Println("Running backtest via API:", which, symbol)
+		statsJSON := runBacktest(which, symbol, eng, db)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(statsJSON)
 	})
 
 	return mux

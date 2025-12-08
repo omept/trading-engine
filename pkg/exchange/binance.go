@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -92,6 +93,10 @@ func (b *BinanceAdapter) privateGET(ctx context.Context, path string, data url.V
 }
 
 // --- interface implementations -----------------------------------------------
+
+func (a *BinanceAdapter) AdapterName() string {
+	return "Binance"
+}
 
 func (b *BinanceAdapter) PlaceOrder(ctx context.Context, o engine.Order) (engine.Order, error) {
 
@@ -198,6 +203,7 @@ func (b *BinanceAdapter) SubscribeCandles(ctx context.Context, symbol string, in
 			b.baseURL,
 			strings.ToUpper(symbol),
 		)
+		log.Printf("Subscribing to Candles from %s", b.AdapterName())
 
 		for {
 			// poll every ~3 seconds

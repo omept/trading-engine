@@ -36,6 +36,7 @@ func NewEMACrossover(symbol string, shortP, longP int, exec engine.OrderExecutor
 
 func (e *EMACrossover) Name() string            { return e.name }
 func (e *EMACrossover) SetAccountUSD(v float64) { e.accountUSD = v }
+func (e *EMACrossover) Symbol() string          { return e.symbol }
 func (e *EMACrossover) AccountBalUSD() float64  { return e.accountUSD }
 func (e *EMACrossover) OnStart()                { log.Println("Started EMAC Crossover Strategy") }
 func (e *EMACrossover) OnStop()                 { log.Println("Stopped EMAC Crossover Strategy") }

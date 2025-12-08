@@ -59,24 +59,49 @@ func (e *Engine) Strategies() []Strategy {
 	return e.strategies
 }
 
+// Start subscribes strategies to candle feeds and runs them
 func (e *Engine) Start(ctx context.Context) {
 	e.ctx, e.cancel = context.WithCancel(ctx)
-	// subscribe to candles for each strategy symbol via exchange (mock supports it)
+
+	e.lock.Lock()
+	defer e.lock.Unlock()
+
 	for _, s := range e.strategies {
-		go func(st Strategy) {
-			st.OnStart()
-			// For demo, assume symbol is retrievable via type assertion if needed.
-		}(s)
+		// Start each strategy
+		s.OnStart()
+
+		// Subscribe to exchange candles for strategy symbol
+		symbol := s.Symbol()  // assume Strategy interface has Symbol()
+		interval := int64(60) // 1-min candles, adjust as needed
+
+		candleCh, err := e.exchange.SubscribeCandles(e.ctx, symbol, interval)
+		if err != nil {
+			log.Printf("failed to subscribe candles for %s: %v", symbol, err)
+			continue
+		}
+
+		// Launch a goroutine to feed candles to the strategy
+		e.wg.Add(1)
+		go func(st Strategy, ch <-chan Candle) {
+			defer e.wg.Done()
+			for {
+				select {
+				case c, ok := <-ch:
+					if !ok {
+						return
+					}
+					st.OnCandle(c)
+				case <-e.ctx.Done():
+					return
+				}
+			}
+		}(s, candleCh)
 	}
-	// In a loop we would dispatch candles; the mock exchange pushes into channels observed by strategies directly in this skeleton.
-	e.wg.Add(1)
-	go func() {
-		defer e.wg.Done()
-		<-e.ctx.Done()
-	}()
+
 	log.Println("Engine started")
 	e.status = "Started"
-	// block until canceled
+
+	// Wait until canceled
 	<-e.ctx.Done()
 }
 

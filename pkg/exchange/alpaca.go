@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -97,6 +98,10 @@ func (a *AlpacaAdapter) PlaceOrder(ctx context.Context, o engine.Order) (engine.
 	return o, nil
 }
 
+func (a *AlpacaAdapter) AdapterName() string {
+	return "Aplaca"
+}
+
 func (a *AlpacaAdapter) CancelOrder(ctx context.Context, orderID string) error {
 	a.mt.Lock()
 	defer a.mt.Unlock()
@@ -155,6 +160,7 @@ func (a *AlpacaAdapter) GetPosition(ctx context.Context, symbol string) (engine.
 func (a *AlpacaAdapter) SubscribeCandles(ctx context.Context, symbol string, interval int64) (<-chan engine.Candle, error) {
 	// Alpaca REST bars polling
 	ch := make(chan engine.Candle, 1024)
+	log.Printf("Subscribing to Candles from %s", a.AdapterName())
 
 	go func() {
 		defer close(ch)

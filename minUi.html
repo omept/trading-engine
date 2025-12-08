@@ -46,14 +46,16 @@
         }
         async function renderChart() {
             const candles = await fetchCandles();
-            const labels = candles.map(c => c.time);
-            const data = {
-                labels: labels,
-                datasets: [
-                    { label: 'Close', data: candles.map(c => c.close), borderColor: 'blue', backgroundColor: 'rgba(0,0,255,0.2)' },
-                    { label: 'Open', data: candles.map(c => c.open), borderColor: 'green', backgroundColor: 'rgba(0,255,0,0.2)' }
-                ]
-            };
+            if (candles){
+                const labels = candles.map(c => c.time);
+                const data = {
+                    labels: labels,
+                    datasets: [
+                        { label: 'Close', data: candles.map(c => c.close), borderColor: 'blue', backgroundColor: 'rgba(0,0,255,0.2)' },
+                        { label: 'Open', data: candles.map(c => c.open), borderColor: 'green', backgroundColor: 'rgba(0,255,0,0.2)' }
+                    ]
+                };
+            }
             if (chart) { chart.data = data; chart.update(); }
             else {
                 const ctx = document.getElementById('chart').getContext('2d');

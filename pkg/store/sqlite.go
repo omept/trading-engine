@@ -114,13 +114,13 @@ func (s *SQLiteStore) SaveCandle(symbol string, cTime string, open, high, low, c
 
 // Load candles for symbol
 func (s *SQLiteStore) LoadCandles(symbol string, limit int) ([]map[string]interface{}, error) {
+	var candles = []map[string]interface{}{}
 	rows, err := s.db.Query(`SELECT time,open,high,low,close,volume FROM candles WHERE symbol=? ORDER BY time ASC LIMIT ?`, symbol, limit)
 	if err != nil {
-		return nil, err
+		return candles, err
 	}
 	defer rows.Close()
 
-	var candles []map[string]interface{}
 	for rows.Next() {
 		var t string
 		var o, h, l, c, v float64

@@ -45,6 +45,7 @@ type Position struct {
 
 type Strategy interface {
 	OnCandle(c Candle)
+	Symbol() string
 	SetAccountUSD(v float64)
 	AccountBalUSD() float64
 	OnStart()
@@ -58,6 +59,7 @@ type ExchangeAdapter interface {
 	GetBalances(ctx context.Context) (map[string]float64, error)
 	SubscribeCandles(ctx context.Context, symbol string, interval int64) (<-chan Candle, error)
 	CancelOrder(ctx context.Context, orderID string) error
+	AdapterName() string
 }
 
 type RiskManager interface {
