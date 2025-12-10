@@ -1,11 +1,11 @@
 # Trading Engine (Go)
-Minimal multi-package trading engine skeleton:
+Multi-package trading engine:
 - cmd/trading-engine: entrypoint
 - pkg/engine: core engine glue
-- pkg/exchange: mock exchange + Binance adapter skeleton
+- pkg/exchange: Mock exchange + Binance adapter + Alpaca Adapter
 - pkg/strategy: EMA crossover + Mean Reversion
 - pkg/backtest: simple backtester
-- pkg/store: SQLite persistence (basic)
+- pkg/store: SQLite persistence
 
 Build:
 
@@ -14,4 +14,7 @@ cd cmd/trading-engine
 go run .
 ```
 
-The mock exchange will run and simulate candles. Swap in real adapters in pkg/exchange.
+The mock exchange will run by default and simulate candles. Use .env variable to set `EXCHANGE`. Exchanges other than Mock retrieves candles from the exchange provider
+
+# Warning
+Work in progress!!!!! Use at your own detriment. 

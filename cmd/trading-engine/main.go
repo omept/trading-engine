@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -11,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"trading-engine/pkg/backtest"
 	"trading-engine/pkg/engine"
 	"trading-engine/pkg/exchange"
 	"trading-engine/pkg/store"
@@ -19,9 +17,6 @@ import (
 
 	"github.com/joho/godotenv"
 )
-
-// Updated main that selects exchange by ENV (default: mock), wires SQLite store,
-// exposes a minimal HTTP UI + REST endpoints to start/stop strategies and show metrics
 
 func main() {
 	log.Println("Starting trading engine ...")
@@ -154,90 +149,6 @@ func main() {
 	log.Println("done")
 }
 
-// minimalUI returns a tiny HTML+JS UI that calls start/stop/status endpoints
-func minimalUI() string {
-	return `
-<!DOCTYPE html>
-<html>
-
-<head>
-    <meta charset="utf-8">
-    <title>Trading Dashboard</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        body {
-            font-family: system-ui, Arial;
-            margin: 24px
-        }
-
-        button {
-            padding: 8px 12px;
-            margin: 6px
-        }
-
-        canvas {
-            max-width: 100%;
-            height: 300px;
-        }
-    </style>
-</head>
-
-<body>
-    <h2>Trading Engine Dashboard</h2>
-    <div>
-        <button onclick="start()">Start</button>
-        <button onclick="stop()">Stop</button>
-        <button onclick="refreshMetrics()">Refresh Metrics</button>
-    </div>
-    <div>
-        Orders: <span id="orders">0</span> | Trades: <span id="trades">0</span> | Runs: <span id="runs">0</span>
-    </div>
-    <canvas id="chart"></canvas>
-    <script>
-        let chart;
-        async function fetchCandles() {
-            const res = await fetch('/api/candles?symbol=BTCUSD&limit=100');
-            return await res.json();
-        }
-        async function fetchMetrics() {
-            const res = await fetch('/api/metrics');
-            return await res.json();
-        }
-        async function renderChart() {
-            const candles = await fetchCandles();
-            if (candles){
-                const labels = candles.map(c => c.time);
-                const data = {
-                    labels: labels,
-                    datasets: [
-                        { label: 'Close', data: candles.map(c => c.close), borderColor: 'blue', backgroundColor: 'rgba(0,0,255,0.2)' },
-                        { label: 'Open', data: candles.map(c => c.open), borderColor: 'green', backgroundColor: 'rgba(0,255,0,0.2)' }
-                    ]
-                };
-            
-				if (chart) { chart.data = data; chart.update(); }
-				else {
-					const ctx = document.getElementById('chart').getContext('2d');
-					chart = new Chart(ctx, { type: 'line', data: data });
-				}
-            }
-        }
-        async function refreshMetrics() {
-            const m = await fetchMetrics();
-            document.getElementById('orders').innerText = m.orders;
-            document.getElementById('trades').innerText = m.trades;
-            document.getElementById('runs').innerText = m.runs;
-        }
-        async function start() { await fetch('/api/start', { method: 'POST' }); }
-        async function stop() { await fetch('/api/stop', { method: 'POST' }); }
-        setInterval(() => { renderChart(); refreshMetrics(); }, 3000);
-        window.onload = () => { renderChart(); refreshMetrics(); };
-    </script>
-</body>
-
-</html>`
-}
-
 func initExhangeAdapter(exchangeName string, db *store.SQLiteStore) engine.ExchangeAdapter {
 	var exch engine.ExchangeAdapter
 	var err error
@@ -283,161 +194,4 @@ func initExhangeAdapter(exchangeName string, db *store.SQLiteStore) engine.Excha
 	}
 
 	return exch
-}
-
-func setUpAPIs(eng *engine.Engine, db *store.SQLiteStore) *http.ServeMux {
-
-	mux := http.NewServeMux()
-
-	// REST endpoints
-	mux.HandleFunc("/api/start", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		ctx := r.Context()
-		go eng.Start(ctx)
-		w.WriteHeader(http.StatusAccepted)
-		w.Write([]byte("started"))
-	})
-
-	mux.HandleFunc("/api/stop", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		eng.Stop()
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("stopped"))
-	})
-
-	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
-		st := eng.Status()
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(st)
-	})
-
-	mux.HandleFunc("/api/metrics", func(w http.ResponseWriter, r *http.Request) {
-		// simple metrics from store: counts of orders/trades/runs
-		metrics := map[string]int64{}
-		orders, _ := db.CountOrders()
-		trades, _ := db.CountTrades()
-		runs, _ := db.CountRuns()
-		metrics["orders"] = orders
-		metrics["trades"] = trades
-		metrics["runs"] = runs
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(metrics)
-	})
-
-	mux.HandleFunc("/api/candles", func(w http.ResponseWriter, r *http.Request) {
-		symbol := r.URL.Query().Get("symbol")
-		if symbol == "" {
-			symbol = "BTCUSD"
-		}
-		limit := 100
-		candles, err := db.LoadCandles(symbol, limit)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(err.Error()))
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(candles)
-	})
-
-	// Minimal web UI
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(minimalUI()))
-	})
-
-	mux.HandleFunc("/api/backtest", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			w.Write([]byte("method not allowed, use POST"))
-			return
-		}
-
-		// Read query parameters or JSON body (here using query params for simplicity)
-		which := r.URL.Query().Get("strategy") // ema | mean | all
-		if which == "" {
-			which = "all"
-		}
-		symbol := r.URL.Query().Get("symbol")
-		if symbol == "" {
-			symbol = "BTCUSD"
-		}
-
-		// Optional: start/end for future range selection
-		start := r.URL.Query().Get("start")
-		end := r.URL.Query().Get("end")
-		if start == "" || end == "" {
-			// default: ignore or use entire DB range
-		}
-
-		log.Println("Running backtest via API:", which, symbol)
-		statsJSON := runBacktest(which, symbol, eng, db)
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write(statsJSON)
-	})
-
-	return mux
-}
-
-func runBacktest(which, symbol string, eng *engine.Engine, db *store.SQLiteStore) []byte {
-	log.Println("Running backtest:", which, symbol)
-
-	// Load candles directly from SQLite
-	data, err := db.LoadCandles(symbol, 300)
-	if err != nil {
-		log.Fatal("LoadCandlesBetween:", err)
-	}
-	if len(data) == 0 {
-		log.Fatal("no candles found for backtest")
-	}
-
-	// Select strategy based on env
-	var strats []engine.Strategy
-
-	for _, s := range eng.Strategies() {
-		name := s.Name()
-
-		if which == "ema" && name == strategy.ST_NAME_EMA {
-			strats = append(strats, s)
-		}
-		if which == "mean" && name == strategy.ST_NAME_MEAN {
-			strats = append(strats, s)
-		}
-		if which == "all" {
-			strats = append(strats, s)
-		}
-	}
-
-	if len(strats) == 0 {
-		log.Fatal("no strategy selected for backtest")
-	}
-
-	bytes, err := json.Marshal(data)
-	if err != nil {
-		log.Fatal(err)
-	}
-	var candles []engine.Candle
-	if err := json.Unmarshal(bytes, &candles); err != nil {
-		log.Fatal(err)
-	}
-
-	bt := backtest.NewBacktester(candles, eng, db)
-	stats, _ := bt.Run("BTCUSDT")
-
-	// convert to JSON
-	jsonBytes, err := json.MarshalIndent(stats, "", "  ")
-	if err != nil {
-		log.Fatal("Failed to marshal stats:", err)
-	}
-
-	log.Println("Backtest complete.")
-	return jsonBytes
 }
