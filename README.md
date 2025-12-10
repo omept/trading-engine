@@ -7,11 +7,11 @@ Multi-package trading engine:
 - pkg/backtest: simple backtester
 - pkg/store: SQLite persistence
 
-Build:
+Run:
 
 ```bash
-cd cmd/trading-engine
-go run .
+go run cmd/trading-engine
+
 ```
 
 The mock exchange will run by default and simulate candles. Use .env variable to set `EXCHANGE`. Exchanges other than Mock retrieves candles from the exchange provider
