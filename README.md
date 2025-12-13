@@ -7,13 +7,27 @@ Multi-package trading engine:
 - pkg/backtest: simple backtester
 - pkg/store: SQLite persistence
 
-Run:
 
+
+### 1. Execute Source Code Directly
+
+Run the application without generating a binary file:
 ```bash
-go run cmd/trading-engine
-
+go run cmd/trading-engine/.
 ```
 
+### 2. Generate a Binary and run the binary
+
+Run the application without generating a binary file:
+```bash
+copy .env bin/.env # copy the env to the bin directory. Replace `copy` with cp on a Mac/Linux
+go build -o bin/TradingEngine cmd/trading-engine/.
+cd bin
+./TradingEngine
+```
+*NOTE: If you move the binary to any other directory, the  `.env` file needs to be in the directory where the binary is called from.*
+
+# Extra Info
 The mock exchange will run by default and simulate candles. Use .env variable to set `EXCHANGE`. Exchanges other than Mock retrieves candles from the exchange provider
 
 # Warning

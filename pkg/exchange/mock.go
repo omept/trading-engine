@@ -162,7 +162,7 @@ func (m *MockExchange) SubscribeCandles(ctx context.Context, symbol string, inte
 				close(ch)
 				return
 			}
-			time.Sleep(5 * time.Millisecond)
+			time.Sleep(2 * time.Second)
 		}
 		close(ch)
 	}()

@@ -28,7 +28,7 @@ func main() {
 	// Initialize persistence (SQLite)
 	sqlLiteFD := os.Getenv("SQLITE_FILE_DIR")
 	if sqlLiteFD == "" {
-		sqlLiteFD = "./data/trading.db"
+		sqlLiteFD = "data/trading.db"
 	}
 	db, err := store.NewSQLiteStore(sqlLiteFD)
 	if err != nil {

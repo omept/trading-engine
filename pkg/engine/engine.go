@@ -65,7 +65,7 @@ func (e *Engine) Start(ctx context.Context) {
 
 	e.lock.Lock()
 	defer e.lock.Unlock()
-
+	log.Println("Loading strategies")
 	for _, s := range e.strategies {
 		// Start each strategy
 		s.OnStart()
@@ -73,7 +73,6 @@ func (e *Engine) Start(ctx context.Context) {
 		// Subscribe to exchange candles for strategy symbol
 		symbol := s.Symbol()  // assume Strategy interface has Symbol()
 		interval := int64(60) // 1-min candles, adjust as needed
-
 		candleCh, err := e.exchange.SubscribeCandles(e.ctx, symbol, interval)
 		if err != nil {
 			log.Printf("failed to subscribe candles for %s: %v", symbol, err)
@@ -82,16 +81,21 @@ func (e *Engine) Start(ctx context.Context) {
 
 		// Launch a goroutine to feed candles to the strategy
 		e.wg.Add(1)
+		cc := 0
 		go func(st Strategy, ch <-chan Candle) {
+			log.Printf("Candle receiver started, now feeding candle to Strategy : %s", s.Name())
 			defer e.wg.Done()
 			for {
 				select {
 				case c, ok := <-ch:
 					if !ok {
+						log.Printf("Candle sending closed. Sent total %d candles", cc)
 						return
 					}
+					cc++
 					st.OnCandle(c)
 				case <-e.ctx.Done():
+					log.Printf("Candle sending stopped. Sent total %d candles", cc)
 					return
 				}
 			}
