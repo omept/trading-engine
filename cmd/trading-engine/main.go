@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"time"
 
-	"trading-engine/pkg/engine"
-	"trading-engine/pkg/exchange"
-	"trading-engine/pkg/store"
-	"trading-engine/pkg/strategy"
+	"github.com/omept/trading-engine/pkg/engine"
+	"github.com/omept/trading-engine/pkg/exchange"
+	"github.com/omept/trading-engine/pkg/store"
+	"github.com/omept/trading-engine/pkg/strategy"
 
 	"github.com/joho/godotenv"
 )

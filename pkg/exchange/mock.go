@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"trading-engine/pkg/engine"
-	"trading-engine/pkg/store"
+	"github.com/omept/trading-engine/pkg/engine"
+	"github.com/omept/trading-engine/pkg/store"
 )
 
 type MockExchange struct {

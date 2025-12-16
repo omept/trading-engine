@@ -1,4 +1,4 @@
-module trading-engine
+module github.com/omept/trading-engine
 
 go 1.25.3
 

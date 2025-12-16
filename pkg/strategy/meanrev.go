@@ -6,7 +6,7 @@ import (
 	"math"
 	"sync"
 
-	"trading-engine/pkg/engine"
+	"github.com/omept/trading-engine/pkg/engine"
 )
 
 const ST_NAME_MEAN = "MeanReversion"

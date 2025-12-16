@@ -5,9 +5,9 @@ import (
 	"sort"
 	"time"
 
-	"trading-engine/pkg/engine"
-	"trading-engine/pkg/exchange"
-	"trading-engine/pkg/store"
+	"github.com/omept/trading-engine/pkg/engine"
+	"github.com/omept/trading-engine/pkg/exchange"
+	"github.com/omept/trading-engine/pkg/store"
 )
 
 type Backtester struct {

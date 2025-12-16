@@ -3,10 +3,11 @@ package main
 import (
 	"encoding/json"
 	"log"
-	"trading-engine/pkg/backtest"
-	"trading-engine/pkg/engine"
-	"trading-engine/pkg/store"
-	"trading-engine/pkg/strategy"
+
+	"github.com/omept/trading-engine/pkg/backtest"
+	"github.com/omept/trading-engine/pkg/engine"
+	"github.com/omept/trading-engine/pkg/store"
+	"github.com/omept/trading-engine/pkg/strategy"
 )
 
 func runBacktest(which, symbol string, eng *engine.Engine, db *store.SQLiteStore) []byte {

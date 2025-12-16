@@ -5,7 +5,7 @@ import (
 	"log"
 	"sync"
 
-	"trading-engine/pkg/store"
+	"github.com/omept/trading-engine/pkg/store"
 )
 
 type Engine struct {

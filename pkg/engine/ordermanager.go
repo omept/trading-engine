@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
-	"trading-engine/pkg/store"
+
+	"github.com/omept/trading-engine/pkg/store"
 )
 
 type OrderManager struct {

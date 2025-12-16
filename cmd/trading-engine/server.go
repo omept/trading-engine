@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"trading-engine/pkg/engine"
-	"trading-engine/pkg/store"
-	"trading-engine/web/dist"
+
+	"github.com/omept/trading-engine/pkg/engine"
+	"github.com/omept/trading-engine/pkg/store"
+	"github.com/omept/trading-engine/web/dist"
 )
 
 func setUpAPIs(eng *engine.Engine, db *store.SQLiteStore) *http.ServeMux {
