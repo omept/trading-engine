@@ -1,5 +1,8 @@
+
 # Trading Engine (Go)
-Multi-package trading engine:
+A modular, multi-package trading engine written in Go, designed for strategy execution, backtesting, and exchange integration. The system features a core engine that orchestrates strategies, order execution, risk management, and persistence. It supports multiple exchanges via adapters (Mock, Binance, and Alpaca), includes built-in EMA crossover and Mean Reversion strategies, a lightweight backtesting framework, and SQLite-based storage for trades and state. The architecture emphasizes clean interfaces, extensibility, and single-binary deployment.
+
+## code structure 
 - cmd/trading-engine: entrypoint
 - pkg/engine: core engine glue
 - pkg/exchange: Mock exchange + Binance adapter + Alpaca Adapter
